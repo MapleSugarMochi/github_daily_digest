@@ -6,7 +6,7 @@ from email.mime.text import MIMEText
 
 GITHUB_TRENDING_URL = "https://github.com/trending?since=daily"
 TOP_N = 5
-DEFAULT_DEEPSEEK_MODEL = "DeepSeek-V4-Pro"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 
@@ -97,6 +97,25 @@ def summarize_repo(client, repo):
     return completion.choices[0].message.content.strip()
 
 
+def build_fallback_summary(repo, error):
+    description = repo["description"] or "该项目没有提供简介。"
+    return (
+        "摘要生成失败，已保留项目基础信息供参考。\n"
+        f"失败原因：{error}\n"
+        f"项目简介：{description}"
+    )
+
+
+def generate_summaries(client, repos):
+    summaries = []
+    for repo in repos:
+        try:
+            summaries.append(summarize_repo(client, repo))
+        except Exception as error:
+            summaries.append(build_fallback_summary(repo, error))
+    return summaries
+
+
 def build_deepseek_client():
     from openai import OpenAI
 
@@ -160,7 +179,7 @@ def main():
 
     client = build_deepseek_client()
 
-    summaries = [summarize_repo(client, repo) for repo in repos]
+    summaries = generate_summaries(client, repos)
     body = build_email_body(repos, summaries)
     send_email("GitHub Trending 每日摘要", body)
 

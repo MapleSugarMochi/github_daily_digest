@@ -75,7 +75,7 @@ class FakeBeautifulSoup:
 class ImportTests(unittest.TestCase):
     def test_module_imports_successfully_before_runtime_dependencies_are_used(self):
         self.assertEqual(main.TOP_N, 5)
-        self.assertEqual(main.DEFAULT_DEEPSEEK_MODEL, "DeepSeek-V4-Pro")
+        self.assertEqual(main.DEFAULT_DEEPSEEK_MODEL, "deepseek-v4-pro")
         self.assertEqual(main.DEFAULT_DEEPSEEK_BASE_URL, "https://api.deepseek.com")
 
 
@@ -142,7 +142,7 @@ class SummarizeRepoTests(unittest.TestCase):
 
         self.assertEqual(summary, "中文摘要")
         call_kwargs = client.chat.completions.create.call_args.kwargs
-        self.assertEqual(call_kwargs["model"], "DeepSeek-V4-Pro")
+        self.assertEqual(call_kwargs["model"], "deepseek-v4-pro")
         self.assertEqual(call_kwargs["temperature"], 0.3)
         self.assertIn("owner/repo", call_kwargs["messages"][1]["content"])
         self.assertIn("不要编造", call_kwargs["messages"][1]["content"])
@@ -166,7 +166,7 @@ class SummarizeRepoTests(unittest.TestCase):
 
         self.assertEqual(
             client.chat.completions.create.call_args.kwargs["model"],
-            "DeepSeek-V4-Pro",
+            "deepseek-v4-pro",
         )
 
 
@@ -211,6 +211,29 @@ class BuildEmailBodyTests(unittest.TestCase):
         self.assertIn("链接：https://github.com/owner/repo", body)
         self.assertIn("今日热度：Unknown", body)
         self.assertIn("这是中文摘要。", body)
+
+
+class GenerateSummariesTests(unittest.TestCase):
+    def test_uses_fallback_summary_when_deepseek_call_fails(self):
+        client = Mock()
+        client.chat.completions.create.side_effect = RuntimeError("Insufficient Balance")
+        repos = [
+            {
+                "name": "owner/repo",
+                "url": "https://github.com/owner/repo",
+                "description": "A useful open source project.",
+                "language": "Python",
+                "total_stars": "12,345",
+                "today_stars": "123 stars today",
+            }
+        ]
+
+        summaries = main.generate_summaries(client, repos)
+
+        self.assertEqual(len(summaries), 1)
+        self.assertIn("摘要生成失败", summaries[0])
+        self.assertIn("Insufficient Balance", summaries[0])
+        self.assertIn("A useful open source project.", summaries[0])
 
 
 class SendEmailTests(unittest.TestCase):
