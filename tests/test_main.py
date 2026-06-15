@@ -169,6 +169,28 @@ class SummarizeRepoTests(unittest.TestCase):
             "deepseek-v4-pro",
         )
 
+    @patch.dict("src.main.os.environ", {"DEEPSEEK_MODEL": "DeepSeek-V4-Pro"}, clear=True)
+    def test_normalizes_deepseek_model_secret_to_lowercase(self):
+        client = Mock()
+        completion = Mock()
+        completion.choices = [Mock(message=Mock(content="中文摘要"))]
+        client.chat.completions.create.return_value = completion
+        repo = {
+            "name": "owner/repo",
+            "url": "https://github.com/owner/repo",
+            "description": "A useful open source project.",
+            "language": "Python",
+            "total_stars": "12,345",
+            "today_stars": "123 stars today",
+        }
+
+        main.summarize_repo(client, repo)
+
+        self.assertEqual(
+            client.chat.completions.create.call_args.kwargs["model"],
+            "deepseek-v4-pro",
+        )
+
 
 class BuildDeepseekClientTests(unittest.TestCase):
     @patch.dict(

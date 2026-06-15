@@ -14,6 +14,10 @@ def get_env_or_default(name, default):
     return os.getenv(name) or default
 
 
+def get_deepseek_model():
+    return get_env_or_default("DEEPSEEK_MODEL", DEFAULT_DEEPSEEK_MODEL).strip().lower()
+
+
 def fetch_trending_repos():
     import requests
     from bs4 import BeautifulSoup
@@ -83,7 +87,7 @@ def summarize_repo(client, repo):
 """
 
     completion = client.chat.completions.create(
-        model=get_env_or_default("DEEPSEEK_MODEL", DEFAULT_DEEPSEEK_MODEL),
+        model=get_deepseek_model(),
         messages=[
             {
                 "role": "system",
