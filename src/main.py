@@ -282,10 +282,6 @@ def format_repo_link(repo_name):
     return f"[{owner_url}]({owner_url}) /{repository}"
 
 
-def format_project_keywords(repo):
-    return ", ".join(repo.get("topics", [])[:5])
-
-
 def build_email_body(repos, summaries):
     lines = [
         "GitHub Trending AI 每日摘要",
@@ -310,7 +306,6 @@ def build_email_body(repos, summaries):
                 f"链接：{format_repo_link(repo['name'])}",
                 f"语言：{repo['language']}",
                 f"Stars：{repo['total_stars']}",
-                f"项目关键词：{format_project_keywords(repo)}",
                 "",
                 f"筛选理由：{repo.get('classification_reason', 'Unknown')}",
                 "",

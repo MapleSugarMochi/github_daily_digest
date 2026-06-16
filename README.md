@@ -186,7 +186,6 @@ charlie@example.com
 - GitHub 链接
 - 主要语言
 - 总 star 数
-- 项目关键词，最多 5 个，来自 GitHub topics
 - 筛选理由
 - DeepSeek 生成的中文摘要
 
@@ -201,7 +200,6 @@ GitHub Trending AI 每日摘要
 链接：[https://github.com/developer](https://github.com/developer) /repository
 语言：Python
 Stars：12,345
-项目关键词：ai-agent, rag, python
 
 筛选理由：一句话说明为什么该项目与 AI / Agent 领域相关。
 

@@ -238,7 +238,7 @@ class BuildEmailBodyTests(unittest.TestCase):
         self.assertIn("链接：[https://github.com/owner](https://github.com/owner) /repo-name", body)
         self.assertIn("语言：Python", body)
         self.assertIn("Stars：12,345", body)
-        self.assertIn("项目关键词：ai-agent, rag, python, llm, search", body)
+        self.assertNotIn("项目关键词：", body)
         self.assertIn("筛选理由：AI agent project", body)
         self.assertIn("**Repo Name** 是一个面向 AI agent 的工具。", body)
         self.assertIn("-" * 60, body)
