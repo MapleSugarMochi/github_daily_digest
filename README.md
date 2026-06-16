@@ -1,6 +1,6 @@
 # GitHub Trending Daily Digest
 
-每天自动抓取 GitHub Trending Daily 的全部项目，按 AI 关键词筛选相关仓库，使用 DeepSeek 生成中文技术摘要，并通过邮件发送到指定邮箱。
+每天自动抓取 GitHub Trending Daily 的全部项目，使用 DeepSeek 逐个判断仓库是否与 AI / Agent 领域相关，再生成中文技术摘要并通过邮件发送到指定邮箱。
 
 这个项目适合放在 GitHub Actions 上免费定时运行，不需要自建服务器。配置好 DeepSeek API Key 和 SMTP 邮箱后，它会每天自动把 GitHub 上值得关注的新项目整理成一封中文邮件。
 
@@ -8,8 +8,8 @@
 
 - 每天定时抓取 GitHub Trending Daily 全部项目
 - 提取项目名称、链接、简介、topics、README 摘要、主要语言、总 star 数和当日热度
-- 对项目名称、简介、topics 和 README 摘要做小写关键词匹配
-- 只汇总匹配 AI 关键词的项目
+- 使用 DeepSeek 对每个项目做 AI / Agent 相关性判断
+- 只汇总 LLM 判定相关的项目
 - 使用 DeepSeek Chat Completions API 生成中文摘要
 - 默认模型为 `deepseek-v4-pro`
 - 通过 SMTP 发送纯文本邮件
@@ -33,7 +33,7 @@ GitHub Actions 定时或手动触发
 补充 topics 和 README 摘要
         |
         v
-按 AI 关键词筛选相关项目
+调用 DeepSeek 判断是否与 AI / Agent 领域相关
         |
         v
 调用 DeepSeek 生成中文摘要
@@ -180,7 +180,7 @@ charlie@example.com
 
 多收件人发送时，脚本会通过 SMTP envelope 指定实际收件人，并把邮件头 `To` 设置为发件人地址，避免收件人之间互相看到邮箱地址。
 
-邮件会包含当天 GitHub Trending 中匹配 AI 关键词的项目：
+邮件会包含当天 GitHub Trending 中经 LLM 判定与 AI / Agent 领域相关的项目：
 
 - 项目名称
 - GitHub 链接
@@ -190,29 +190,35 @@ charlie@example.com
 - Topics
 - DeepSeek 生成的中文摘要
 
-如果当天没有匹配项目，脚本仍会发送邮件并说明未发现匹配 AI 关键词的项目。
+如果当天没有匹配项目，脚本仍会发送邮件并说明未发现相关项目。
 
 如果某个项目的摘要生成失败，邮件仍会发送，并在对应项目下显示失败原因和项目原始简介。
 
-## AI 关键词匹配
+## AI / Agent 相关性判断
 
-脚本会把每个 Trending 项目的以下内容合并后转成小写，再匹配关键词：
+脚本会把每个 Trending 项目的以下信息交给 DeepSeek 做二分类判断：
 
 - 项目名称
 - 项目简介
 - GitHub topics
 - README 摘要
 
-当前关键词包括：
+模型会判断项目是否与以下方向明显相关：
 
 ```text
-llm, ai-agent, agentic, rag, generative-ai,
-large-language-model, openai, anthropic, claude, gemini,
-llama, qwen, deepseek, ollama, vllm,
-langchain, langgraph, llamaindex, autogen, crewai,
-transformers, huggingface, diffusion, multimodal,
-人工智能, 大模型, 大语言模型, 智能体
+AI, Agent, LLM, 大模型, 智能体, RAG, 多模态,
+生成式 AI, AI 开发工具链, AI agent workflows
 ```
+
+分类阶段要求模型返回 JSON：
+
+```json
+{"relevant": true, "reason": "一句话说明原因"}
+```
+
+只有 `relevant` 为 `true` 的项目会进入邮件摘要。这个设计比关键词匹配更不容易漏掉 `AI agent`、`AI agents`、`agent workflow` 等自然语言写法。
+
+由于每个 Trending 项目都会先进行一次 LLM 分类，DeepSeek 调用次数会比纯关键词筛选更多。每日运行前请确认 DeepSeek 账户有可用额度。
 
 ## 安全说明
 
@@ -228,7 +234,7 @@ transformers, huggingface, diffusion, multimodal,
 
 这表示 DeepSeek 账户余额或额度不足。请检查账户余额、套餐额度或计费状态。
 
-当前脚本会捕获单个项目的摘要失败，并继续发送邮件。邮件中会显示失败原因和项目基础信息。
+当前脚本会捕获单个项目的摘要失败，并继续发送邮件。邮件中会显示失败原因和项目基础信息。分类阶段如果调用失败，该项目会被视为不相关并跳过。
 
 ### DeepSeek 返回模型名错误
 

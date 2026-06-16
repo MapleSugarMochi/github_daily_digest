@@ -74,7 +74,7 @@ class FakeBeautifulSoup:
 
 class ImportTests(unittest.TestCase):
     def test_module_imports_successfully_before_runtime_dependencies_are_used(self):
-        self.assertIn("llm", main.AI_KEYWORDS)
+        self.assertTrue(callable(main.classify_repo_relevance))
         self.assertEqual(main.DEFAULT_DEEPSEEK_MODEL, "deepseek-v4-pro")
         self.assertEqual(main.DEFAULT_DEEPSEEK_BASE_URL, "https://api.deepseek.com")
 
@@ -222,65 +222,125 @@ class BuildEmailBodyTests(unittest.TestCase):
                 "language": "Python",
                 "total_stars": "12,345",
                 "today_stars": "",
+                "classification_reason": "AI agent project",
             }
         ]
 
         body = main.build_email_body(repos, ["这是中文摘要。"])
 
         self.assertIn("GitHub Trending AI 每日摘要", body)
-        self.assertIn("今日匹配 AI 关键词的 GitHub Trending 项目数：1", body)
+        self.assertIn("今日 LLM 判定相关的 GitHub Trending 项目数：1", body)
         self.assertIn("1. owner/repo", body)
         self.assertIn("链接：https://github.com/owner/repo", body)
         self.assertIn("今日热度：Unknown", body)
+        self.assertIn("筛选理由：AI agent project", body)
         self.assertIn("这是中文摘要。", body)
 
 
 class FilterAiReposTests(unittest.TestCase):
-    def test_filters_repositories_by_ai_keywords_across_repo_fields(self):
+    def test_filters_repositories_with_llm_classification(self):
         repos = [
+            {
+                "name": "owner/agent-tool",
+                "description": "A terminal helper.",
+                "topics": [],
+                "readme_summary": "Builds AI agent workflows.",
+            },
             {
                 "name": "owner/plain-tool",
                 "description": "A terminal helper.",
                 "topics": [],
                 "readme_summary": "Command line utilities.",
             },
-            {
-                "name": "owner/llm-tool",
-                "description": "A terminal helper.",
-                "topics": [],
-                "readme_summary": "Command line utilities.",
-            },
-            {
-                "name": "owner/workflow",
-                "description": "Build RAG apps.",
-                "topics": [],
-                "readme_summary": "Command line utilities.",
-            },
-            {
-                "name": "owner/library",
-                "description": "A terminal helper.",
-                "topics": ["LangChain"],
-                "readme_summary": "Command line utilities.",
-            },
-            {
-                "name": "owner/readme-match",
-                "description": "A terminal helper.",
-                "topics": [],
-                "readme_summary": "This project supports 智能体 workflows.",
-            },
+        ]
+        client = Mock()
+        relevant_completion = Mock()
+        relevant_completion.choices = [
+            Mock(message=Mock(content='{"relevant": true, "reason": "AI agent project"}'))
+        ]
+        irrelevant_completion = Mock()
+        irrelevant_completion.choices = [
+            Mock(message=Mock(content='{"relevant": false, "reason": "Not AI related"}'))
+        ]
+        client.chat.completions.create.side_effect = [
+            relevant_completion,
+            irrelevant_completion,
         ]
 
-        matches = main.filter_ai_repos(repos)
+        matches = main.filter_ai_repos(client, repos)
 
-        self.assertEqual(
-            [repo["name"] for repo in matches],
-            [
-                "owner/llm-tool",
-                "owner/workflow",
-                "owner/library",
-                "owner/readme-match",
-            ],
-        )
+        self.assertEqual([repo["name"] for repo in matches], ["owner/agent-tool"])
+
+    def test_llm_classification_accepts_json_inside_markdown_fence(self):
+        repo = {
+            "name": "owner/agent-tool",
+            "description": "A terminal helper.",
+            "topics": [],
+            "readme_summary": "Builds AI agent workflows.",
+        }
+        client = Mock()
+        completion = Mock()
+        completion.choices = [
+            Mock(
+                message=Mock(
+                    content='```json\n{"relevant": true, "reason": "AI agent project"}\n```'
+                )
+            )
+        ]
+        client.chat.completions.create.return_value = completion
+
+        result = main.classify_repo_relevance(client, repo)
+
+        self.assertTrue(result["relevant"])
+        self.assertEqual(result["reason"], "AI agent project")
+
+    def test_classification_failure_marks_repo_irrelevant(self):
+        repo = {
+            "name": "owner/agent-tool",
+            "description": "A terminal helper.",
+            "topics": [],
+            "readme_summary": "Builds AI agent workflows.",
+        }
+        client = Mock()
+        client.chat.completions.create.side_effect = RuntimeError("classification failed")
+
+        result = main.classify_repo_relevance(client, repo)
+
+        self.assertFalse(result["relevant"])
+        self.assertIn("classification failed", result["reason"])
+
+
+class KeywordFilterRemovedTests(unittest.TestCase):
+    def test_keyword_filter_constant_is_not_used_for_repo_selection(self):
+        self.assertFalse(hasattr(main, "AI_KEYWORDS"))
+
+
+class LegacyFilterBehaviorTests(unittest.TestCase):
+    def test_agent_project_does_not_need_keyword_table_to_be_selected(self):
+        repos = [
+            {
+                "name": "owner/agent-tool",
+                "description": "A terminal helper.",
+                "topics": [],
+                "readme_summary": "Builds autonomous planning workflows.",
+            },
+            {
+                "name": "owner/plain-tool",
+                "description": "A terminal helper.",
+                "topics": [],
+                "readme_summary": "Command line utilities.",
+            },
+        ]
+        client = Mock()
+        included = Mock()
+        included.choices = [Mock(message=Mock(content='{"relevant": true, "reason": "agent"}'))]
+        excluded = Mock()
+        excluded.choices = [Mock(message=Mock(content='{"relevant": false, "reason": "utility"}'))]
+        client.chat.completions.create.side_effect = [included, excluded]
+
+        matches = main.filter_ai_repos(client, repos)
+
+        self.assertEqual([repo["name"] for repo in matches], ["owner/agent-tool"])
 
 
 class EnrichRepoTests(unittest.TestCase):

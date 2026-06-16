@@ -1,4 +1,5 @@
 import base64
+import json
 import os
 import re
 import smtplib
@@ -11,36 +12,6 @@ GITHUB_API_URL = "https://api.github.com"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 README_SUMMARY_MAX_CHARS = 1200
-AI_KEYWORDS = [
-    "llm",
-    "ai-agent",
-    "agentic",
-    "rag",
-    "generative-ai",
-    "large-language-model",
-    "openai",
-    "anthropic",
-    "claude",
-    "gemini",
-    "llama",
-    "qwen",
-    "deepseek",
-    "ollama",
-    "vllm",
-    "langchain",
-    "langgraph",
-    "llamaindex",
-    "autogen",
-    "crewai",
-    "transformers",
-    "huggingface",
-    "diffusion",
-    "multimodal",
-    "人工智能",
-    "大模型",
-    "大语言模型",
-    "智能体",
-]
 
 
 def get_env_or_default(name, default):
@@ -153,20 +124,72 @@ def enrich_repos(repos):
     return [enrich_repo(repo, session) for repo in repos]
 
 
-def repo_matches_ai_keywords(repo):
-    searchable_text = " ".join(
-        [
-            repo.get("name", ""),
-            repo.get("description", ""),
-            " ".join(repo.get("topics", [])),
-            repo.get("readme_summary", ""),
-        ]
-    ).lower()
-    return any(keyword in searchable_text for keyword in AI_KEYWORDS)
+def parse_json_object(content):
+    stripped = content.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
+        stripped = re.sub(r"\s*```$", "", stripped)
+
+    match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+    if not match:
+        raise ValueError("No JSON object found in model response.")
+    return json.loads(match.group(0))
 
 
-def filter_ai_repos(repos):
-    return [repo for repo in repos if repo_matches_ai_keywords(repo)]
+def classify_repo_relevance(client, repo):
+    prompt = f"""
+请判断下面这个 GitHub Trending 项目是否与 AI / Agent / LLM / 大模型 / 智能体 / RAG / 多模态 / 生成式 AI / AI 开发工具链相关。
+
+判断要求：
+1. 只要项目明显属于上述领域，或主要服务于上述领域，就判定为相关。
+2. 对 AI agent、AI agents、agent workflow、agent skills、computer-use agents 等自然语言表述要判定为相关。
+3. 普通开发工具、框架、数据库、系统工具如果没有明显 AI/Agent 关系，应判定为不相关。
+4. 信息不足时谨慎判断；不要因为项目很热门就判定为相关。
+5. 只输出 JSON，不要输出 Markdown 或解释性文字。
+
+输出格式：
+{{"relevant": true, "reason": "一句话说明原因"}}
+
+项目信息：
+- 名称：{repo["name"]}
+- 链接：{repo.get("url", "Unknown")}
+- 描述：{repo.get("description", "")}
+- 主要语言：{repo.get("language", "Unknown")}
+- 总 star 数：{repo.get("total_stars", "Unknown")}
+- 今日新增 star：{repo.get("today_stars", "")}
+- Topics：{", ".join(repo.get("topics", [])) or "Unknown"}
+- README 摘要：{repo.get("readme_summary", "") or "Unknown"}
+"""
+
+    try:
+        completion = client.chat.completions.create(
+            model=get_deepseek_model(),
+            messages=[
+                {
+                    "role": "system",
+                    "content": "你是一个严格但不过度保守的开源项目分类助手。",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0,
+        )
+        result = parse_json_object(completion.choices[0].message.content)
+        return {
+            "relevant": bool(result.get("relevant")),
+            "reason": str(result.get("reason", "")).strip() or "No reason provided.",
+        }
+    except Exception as error:
+        return {"relevant": False, "reason": f"分类失败：{error}"}
+
+
+def filter_ai_repos(client, repos):
+    matches = []
+    for repo in repos:
+        classification = classify_repo_relevance(client, repo)
+        repo["classification_reason"] = classification["reason"]
+        if classification["relevant"]:
+            matches.append(repo)
+    return matches
 
 
 def summarize_repo(client, repo):
@@ -237,14 +260,14 @@ def build_email_body(repos, summaries):
     lines = [
         "GitHub Trending AI 每日摘要",
         "",
-        f"今日匹配 AI 关键词的 GitHub Trending 项目数：{len(repos)}",
+        f"今日 LLM 判定相关的 GitHub Trending 项目数：{len(repos)}",
         "",
     ]
 
     if not repos:
         lines.extend(
             [
-                "今天没有发现匹配 AI 关键词的 GitHub Trending 项目。",
+                "今天没有发现 LLM 判定相关的 GitHub Trending 项目。",
                 "",
             ]
         )
@@ -259,6 +282,7 @@ def build_email_body(repos, summaries):
                 f"Stars：{repo['total_stars']}",
                 f"今日热度：{repo['today_stars'] or 'Unknown'}",
                 f"Topics：{', '.join(repo.get('topics', [])) or 'Unknown'}",
+                f"筛选理由：{repo.get('classification_reason', 'Unknown')}",
                 "",
                 summaries[index - 1],
                 "",
@@ -301,8 +325,8 @@ def main():
     if not repos:
         raise RuntimeError("No trending repositories found.")
 
-    repos = filter_ai_repos(enrich_repos(repos))
     client = build_deepseek_client()
+    repos = filter_ai_repos(client, enrich_repos(repos))
 
     summaries = generate_summaries(client, repos)
     body = build_email_body(repos, summaries)
