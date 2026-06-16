@@ -1,13 +1,15 @@
 # GitHub Trending Daily Digest
 
-每天自动抓取 GitHub Trending 前 5 个热门项目，使用 DeepSeek 生成中文技术摘要，并通过邮件发送到指定邮箱。
+每天自动抓取 GitHub Trending Daily 的全部项目，按 AI 关键词筛选相关仓库，使用 DeepSeek 生成中文技术摘要，并通过邮件发送到指定邮箱。
 
 这个项目适合放在 GitHub Actions 上免费定时运行，不需要自建服务器。配置好 DeepSeek API Key 和 SMTP 邮箱后，它会每天自动把 GitHub 上值得关注的新项目整理成一封中文邮件。
 
 ## 功能特性
 
-- 每天定时抓取 GitHub Trending Daily 前 5 个项目
-- 提取项目名称、链接、简介、主要语言、总 star 数和当日热度
+- 每天定时抓取 GitHub Trending Daily 全部项目
+- 提取项目名称、链接、简介、topics、README 摘要、主要语言、总 star 数和当日热度
+- 对项目名称、简介、topics 和 README 摘要做小写关键词匹配
+- 只汇总匹配 AI 关键词的项目
 - 使用 DeepSeek Chat Completions API 生成中文摘要
 - 默认模型为 `deepseek-v4-pro`
 - 通过 SMTP 发送纯文本邮件
@@ -28,7 +30,10 @@ GitHub Actions 定时或手动触发
 抓取 GitHub Trending Daily
         |
         v
-解析前 5 个热门项目
+补充 topics 和 README 摘要
+        |
+        v
+按 AI 关键词筛选相关项目
         |
         v
 调用 DeepSeek 生成中文摘要
@@ -175,16 +180,39 @@ charlie@example.com
 
 多收件人发送时，脚本会通过 SMTP envelope 指定实际收件人，并把邮件头 `To` 设置为发件人地址，避免收件人之间互相看到邮箱地址。
 
-邮件会包含当天 GitHub Trending 前 5 个项目：
+邮件会包含当天 GitHub Trending 中匹配 AI 关键词的项目：
 
 - 项目名称
 - GitHub 链接
 - 主要语言
 - 总 star 数
 - 当日热度
+- Topics
 - DeepSeek 生成的中文摘要
 
+如果当天没有匹配项目，脚本仍会发送邮件并说明未发现匹配 AI 关键词的项目。
+
 如果某个项目的摘要生成失败，邮件仍会发送，并在对应项目下显示失败原因和项目原始简介。
+
+## AI 关键词匹配
+
+脚本会把每个 Trending 项目的以下内容合并后转成小写，再匹配关键词：
+
+- 项目名称
+- 项目简介
+- GitHub topics
+- README 摘要
+
+当前关键词包括：
+
+```text
+llm, ai-agent, agentic, rag, generative-ai,
+large-language-model, openai, anthropic, claude, gemini,
+llama, qwen, deepseek, ollama, vllm,
+langchain, langgraph, llamaindex, autogen, crewai,
+transformers, huggingface, diffusion, multimodal,
+人工智能, 大模型, 大语言模型, 智能体
+```
 
 ## 安全说明
 

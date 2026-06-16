@@ -74,7 +74,7 @@ class FakeBeautifulSoup:
 
 class ImportTests(unittest.TestCase):
     def test_module_imports_successfully_before_runtime_dependencies_are_used(self):
-        self.assertEqual(main.TOP_N, 5)
+        self.assertIn("llm", main.AI_KEYWORDS)
         self.assertEqual(main.DEFAULT_DEEPSEEK_MODEL, "deepseek-v4-pro")
         self.assertEqual(main.DEFAULT_DEEPSEEK_BASE_URL, "https://api.deepseek.com")
 
@@ -227,12 +227,86 @@ class BuildEmailBodyTests(unittest.TestCase):
 
         body = main.build_email_body(repos, ["这是中文摘要。"])
 
-        self.assertIn("GitHub Trending 每日摘要", body)
-        self.assertIn("今日最热门的前 1 个项目", body)
+        self.assertIn("GitHub Trending AI 每日摘要", body)
+        self.assertIn("今日匹配 AI 关键词的 GitHub Trending 项目数：1", body)
         self.assertIn("1. owner/repo", body)
         self.assertIn("链接：https://github.com/owner/repo", body)
         self.assertIn("今日热度：Unknown", body)
         self.assertIn("这是中文摘要。", body)
+
+
+class FilterAiReposTests(unittest.TestCase):
+    def test_filters_repositories_by_ai_keywords_across_repo_fields(self):
+        repos = [
+            {
+                "name": "owner/plain-tool",
+                "description": "A terminal helper.",
+                "topics": [],
+                "readme_summary": "Command line utilities.",
+            },
+            {
+                "name": "owner/llm-tool",
+                "description": "A terminal helper.",
+                "topics": [],
+                "readme_summary": "Command line utilities.",
+            },
+            {
+                "name": "owner/workflow",
+                "description": "Build RAG apps.",
+                "topics": [],
+                "readme_summary": "Command line utilities.",
+            },
+            {
+                "name": "owner/library",
+                "description": "A terminal helper.",
+                "topics": ["LangChain"],
+                "readme_summary": "Command line utilities.",
+            },
+            {
+                "name": "owner/readme-match",
+                "description": "A terminal helper.",
+                "topics": [],
+                "readme_summary": "This project supports 智能体 workflows.",
+            },
+        ]
+
+        matches = main.filter_ai_repos(repos)
+
+        self.assertEqual(
+            [repo["name"] for repo in matches],
+            [
+                "owner/llm-tool",
+                "owner/workflow",
+                "owner/library",
+                "owner/readme-match",
+            ],
+        )
+
+
+class EnrichRepoTests(unittest.TestCase):
+    def test_enriches_repository_with_topics_and_readme_summary(self):
+        repo = {
+            "name": "owner/repo",
+            "url": "https://github.com/owner/repo",
+            "description": "A useful open source project.",
+            "language": "Python",
+            "total_stars": "12,345",
+            "today_stars": "123 stars today",
+        }
+        session = Mock()
+        repo_response = Mock()
+        repo_response.json.return_value = {"topics": ["AI-Agent", "Python"]}
+        readme_response = Mock()
+        readme_response.json.return_value = {
+            "content": "IyBSZXBvCgpCdWlsZHMgQUkgYWdlbnQgd29ya2Zsb3dzLg=="
+        }
+        session.get.side_effect = [repo_response, readme_response]
+
+        enriched = main.enrich_repo(repo, session)
+
+        self.assertEqual(enriched["topics"], ["AI-Agent", "Python"])
+        self.assertIn("Builds AI agent workflows.", enriched["readme_summary"])
+        self.assertEqual(session.get.call_count, 2)
 
 
 class ParseMailRecipientsTests(unittest.TestCase):

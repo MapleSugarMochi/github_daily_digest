@@ -1,13 +1,46 @@
+import base64
 import os
+import re
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 
 GITHUB_TRENDING_URL = "https://github.com/trending?since=daily"
-TOP_N = 5
+GITHUB_API_URL = "https://api.github.com"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+README_SUMMARY_MAX_CHARS = 1200
+AI_KEYWORDS = [
+    "llm",
+    "ai-agent",
+    "agentic",
+    "rag",
+    "generative-ai",
+    "large-language-model",
+    "openai",
+    "anthropic",
+    "claude",
+    "gemini",
+    "llama",
+    "qwen",
+    "deepseek",
+    "ollama",
+    "vllm",
+    "langchain",
+    "langgraph",
+    "llamaindex",
+    "autogen",
+    "crewai",
+    "transformers",
+    "huggingface",
+    "diffusion",
+    "multimodal",
+    "人工智能",
+    "大模型",
+    "大语言模型",
+    "智能体",
+]
 
 
 def get_env_or_default(name, default):
@@ -29,7 +62,7 @@ def fetch_trending_repos():
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
-    repo_articles = soup.select("article.Box-row")[:TOP_N]
+    repo_articles = soup.select("article.Box-row")
 
     repos = []
     for article in repo_articles:
@@ -67,6 +100,75 @@ def fetch_trending_repos():
     return repos
 
 
+def summarize_readme(readme_text):
+    plain_text = re.sub(r"`{1,3}[^`]*`{1,3}", " ", readme_text)
+    plain_text = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", plain_text)
+    plain_text = re.sub(r"\[[^\]]+\]\([^)]+\)", " ", plain_text)
+    plain_text = re.sub(r"[#>*_\-|]+", " ", plain_text)
+    plain_text = " ".join(plain_text.split())
+    return plain_text[:README_SUMMARY_MAX_CHARS]
+
+
+def decode_readme_content(encoded_content):
+    normalized = "".join(encoded_content.split())
+    return base64.b64decode(normalized).decode("utf-8", errors="replace")
+
+
+def enrich_repo(repo, session):
+    enriched = dict(repo)
+    enriched.setdefault("topics", [])
+    enriched.setdefault("readme_summary", "")
+
+    headers = {"Accept": "application/vnd.github+json"}
+    try:
+        repo_response = session.get(
+            f"{GITHUB_API_URL}/repos/{repo['name']}",
+            headers=headers,
+            timeout=30,
+        )
+        repo_response.raise_for_status()
+        enriched["topics"] = repo_response.json().get("topics", [])
+    except Exception:
+        enriched["topics"] = []
+
+    try:
+        readme_response = session.get(
+            f"{GITHUB_API_URL}/repos/{repo['name']}/readme",
+            headers=headers,
+            timeout=30,
+        )
+        readme_response.raise_for_status()
+        readme_text = decode_readme_content(readme_response.json().get("content", ""))
+        enriched["readme_summary"] = summarize_readme(readme_text)
+    except Exception:
+        enriched["readme_summary"] = ""
+
+    return enriched
+
+
+def enrich_repos(repos):
+    import requests
+
+    session = requests.Session()
+    return [enrich_repo(repo, session) for repo in repos]
+
+
+def repo_matches_ai_keywords(repo):
+    searchable_text = " ".join(
+        [
+            repo.get("name", ""),
+            repo.get("description", ""),
+            " ".join(repo.get("topics", [])),
+            repo.get("readme_summary", ""),
+        ]
+    ).lower()
+    return any(keyword in searchable_text for keyword in AI_KEYWORDS)
+
+
+def filter_ai_repos(repos):
+    return [repo for repo in repos if repo_matches_ai_keywords(repo)]
+
+
 def summarize_repo(client, repo):
     prompt = f"""
 请用中文总结下面这个 GitHub 热门项目。
@@ -84,6 +186,8 @@ def summarize_repo(client, repo):
 - 主要语言：{repo["language"]}
 - 总 star 数：{repo["total_stars"]}
 - 今日新增 star：{repo["today_stars"]}
+- Topics：{", ".join(repo.get("topics", [])) or "Unknown"}
+- README 摘要：{repo.get("readme_summary", "") or "Unknown"}
 """
 
     completion = client.chat.completions.create(
@@ -131,11 +235,20 @@ def build_deepseek_client():
 
 def build_email_body(repos, summaries):
     lines = [
-        "GitHub Trending 每日摘要",
+        "GitHub Trending AI 每日摘要",
         "",
-        f"今日最热门的前 {len(repos)} 个项目：",
+        f"今日匹配 AI 关键词的 GitHub Trending 项目数：{len(repos)}",
         "",
     ]
+
+    if not repos:
+        lines.extend(
+            [
+                "今天没有发现匹配 AI 关键词的 GitHub Trending 项目。",
+                "",
+            ]
+        )
+        return "\n".join(lines)
 
     for index, repo in enumerate(repos, start=1):
         lines.extend(
@@ -145,6 +258,7 @@ def build_email_body(repos, summaries):
                 f"语言：{repo['language']}",
                 f"Stars：{repo['total_stars']}",
                 f"今日热度：{repo['today_stars'] or 'Unknown'}",
+                f"Topics：{', '.join(repo.get('topics', [])) or 'Unknown'}",
                 "",
                 summaries[index - 1],
                 "",
@@ -187,11 +301,12 @@ def main():
     if not repos:
         raise RuntimeError("No trending repositories found.")
 
+    repos = filter_ai_repos(enrich_repos(repos))
     client = build_deepseek_client()
 
     summaries = generate_summaries(client, repos)
     body = build_email_body(repos, summaries)
-    send_email("GitHub Trending 每日摘要", body)
+    send_email("GitHub Trending AI 每日摘要", body)
 
 
 if __name__ == "__main__":
