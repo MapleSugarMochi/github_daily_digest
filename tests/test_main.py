@@ -146,6 +146,7 @@ class SummarizeRepoTests(unittest.TestCase):
         self.assertEqual(call_kwargs["temperature"], 0.3)
         self.assertIn("owner/repo", call_kwargs["messages"][1]["content"])
         self.assertIn("不要编造", call_kwargs["messages"][1]["content"])
+        self.assertIn("**repo** 是一个", call_kwargs["messages"][1]["content"])
 
     @patch.dict("src.main.os.environ", {"DEEPSEEK_MODEL": ""}, clear=True)
     def test_uses_default_deepseek_model_when_secret_is_blank(self):
@@ -216,25 +217,31 @@ class BuildEmailBodyTests(unittest.TestCase):
     def test_builds_plain_text_daily_digest_email(self):
         repos = [
             {
-                "name": "owner/repo",
+                "name": "owner/repo-name",
                 "url": "https://github.com/owner/repo",
                 "description": "A useful open source project.",
                 "language": "Python",
                 "total_stars": "12,345",
                 "today_stars": "",
+                "topics": ["ai-agent", "rag", "python", "llm", "search", "extra"],
                 "classification_reason": "AI agent project",
             }
         ]
 
-        body = main.build_email_body(repos, ["这是中文摘要。"])
+        body = main.build_email_body(
+            repos, ["**Repo Name** 是一个面向 AI agent 的工具。"]
+        )
 
         self.assertIn("GitHub Trending AI 每日摘要", body)
-        self.assertIn("今日 LLM 判定相关的 GitHub Trending 项目数：1", body)
-        self.assertIn("1. owner/repo", body)
-        self.assertIn("链接：https://github.com/owner/repo", body)
-        self.assertIn("今日热度：Unknown", body)
+        self.assertIn("项目数：1", body)
+        self.assertIn("1. owner /repo-name", body)
+        self.assertIn("链接：[https://github.com/owner](https://github.com/owner) /repo-name", body)
+        self.assertIn("语言：Python", body)
+        self.assertIn("Stars：12,345", body)
+        self.assertIn("项目关键词：ai-agent, rag, python, llm, search", body)
         self.assertIn("筛选理由：AI agent project", body)
-        self.assertIn("这是中文摘要。", body)
+        self.assertIn("**Repo Name** 是一个面向 AI agent 的工具。", body)
+        self.assertIn("-" * 60, body)
 
 
 class FilterAiReposTests(unittest.TestCase):

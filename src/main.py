@@ -192,15 +192,21 @@ def filter_ai_repos(client, repos):
     return matches
 
 
+def get_repo_short_name(repo_name):
+    return repo_name.split("/")[-1]
+
+
 def summarize_repo(client, repo):
+    repo_short_name = get_repo_short_name(repo["name"])
     prompt = f"""
 请用中文总结下面这个 GitHub 热门项目。
 
 要求：
-1. 用 3-5 句话说明它是做什么的。
-2. 说明它为什么可能值得关注。
-3. 如果信息不足，请基于已有信息谨慎总结，不要编造。
-4. 输出风格适合放在每日技术邮件里。
+1. 直接输出正文，不要标题、列表或项目符号。
+2. 第一句话必须以“**{repo_short_name}** 是一个”开头。
+3. 用 3-5 句话说明它是做什么的，以及为什么可能值得关注。
+4. 如果信息不足，请基于已有信息谨慎总结，不要编造。
+5. 输出风格适合放在每日技术邮件里。
 
 项目信息：
 - 名称：{repo["name"]}
@@ -256,11 +262,35 @@ def build_deepseek_client():
     )
 
 
+def split_repo_name(repo_name):
+    if "/" not in repo_name:
+        return repo_name, ""
+    owner, repository = repo_name.split("/", 1)
+    return owner, repository
+
+
+def format_repo_display_name(repo_name):
+    owner, repository = split_repo_name(repo_name)
+    return f"{owner} /{repository}" if repository else owner
+
+
+def format_repo_link(repo_name):
+    owner, repository = split_repo_name(repo_name)
+    if not repository:
+        return f"https://github.com/{owner}"
+    owner_url = f"https://github.com/{owner}"
+    return f"[{owner_url}]({owner_url}) /{repository}"
+
+
+def format_project_keywords(repo):
+    return ", ".join(repo.get("topics", [])[:5])
+
+
 def build_email_body(repos, summaries):
     lines = [
         "GitHub Trending AI 每日摘要",
         "",
-        f"今日 LLM 判定相关的 GitHub Trending 项目数：{len(repos)}",
+        f"项目数：{len(repos)}",
         "",
     ]
 
@@ -276,12 +306,12 @@ def build_email_body(repos, summaries):
     for index, repo in enumerate(repos, start=1):
         lines.extend(
             [
-                f"{index}. {repo['name']}",
-                f"链接：{repo['url']}",
+                f"{index}. {format_repo_display_name(repo['name'])}",
+                f"链接：{format_repo_link(repo['name'])}",
                 f"语言：{repo['language']}",
                 f"Stars：{repo['total_stars']}",
-                f"今日热度：{repo['today_stars'] or 'Unknown'}",
-                f"Topics：{', '.join(repo.get('topics', [])) or 'Unknown'}",
+                f"项目关键词：{format_project_keywords(repo)}",
+                "",
                 f"筛选理由：{repo.get('classification_reason', 'Unknown')}",
                 "",
                 summaries[index - 1],

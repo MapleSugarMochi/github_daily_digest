@@ -186,9 +186,29 @@ charlie@example.com
 - GitHub 链接
 - 主要语言
 - 总 star 数
-- 当日热度
-- Topics
+- 项目关键词，最多 5 个，来自 GitHub topics
+- 筛选理由
 - DeepSeek 生成的中文摘要
+
+邮件正文格式示例：
+
+```text
+GitHub Trending AI 每日摘要
+
+项目数：n
+
+1. developer /repository
+链接：[https://github.com/developer](https://github.com/developer) /repository
+语言：Python
+Stars：12,345
+项目关键词：ai-agent, rag, python
+
+筛选理由：一句话说明为什么该项目与 AI / Agent 领域相关。
+
+**repository** 是一个……
+
+------------------------------------------------------------
+```
 
 如果当天没有匹配项目，脚本仍会发送邮件并说明未发现相关项目。
 
