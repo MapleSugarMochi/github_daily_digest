@@ -82,7 +82,7 @@ Settings -> Secrets and variables -> Actions -> New repository secret
 | `SMTP_USER` | SMTP 登录账号 |
 | `SMTP_PASSWORD` | SMTP 密码、App Password 或授权码 |
 | `MAIL_FROM` | 发件人邮箱 |
-| `MAIL_TO` | 收件人邮箱 |
+| `MAIL_TO` | 收件人邮箱。支持多个邮箱，一行一个 |
 
 可选 Secrets：
 
@@ -164,6 +164,16 @@ python -c "import requests, bs4, openai"
 GitHub Actions 中也会执行这两步。只有依赖验证和单元测试通过后，workflow 才会继续发送邮件。
 
 ## 邮件内容
+
+如果需要发送给多个收件人，可以在 GitHub Secret `MAIL_TO` 中一行填写一个邮箱：
+
+```text
+alice@example.com
+bob@example.com
+charlie@example.com
+```
+
+多收件人发送时，脚本会通过 SMTP envelope 指定实际收件人，并把邮件头 `To` 设置为发件人地址，避免收件人之间互相看到邮箱地址。
 
 邮件会包含当天 GitHub Trending 前 5 个项目：
 

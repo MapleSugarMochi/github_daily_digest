@@ -235,6 +235,18 @@ class BuildEmailBodyTests(unittest.TestCase):
         self.assertIn("这是中文摘要。", body)
 
 
+class ParseMailRecipientsTests(unittest.TestCase):
+    def test_parses_newline_separated_mail_to_recipients(self):
+        recipients = main.parse_mail_recipients(
+            "alice@example.com\n bob@example.com \n\ncharlie@example.com"
+        )
+
+        self.assertEqual(
+            recipients,
+            ["alice@example.com", "bob@example.com", "charlie@example.com"],
+        )
+
+
 class GenerateSummariesTests(unittest.TestCase):
     def test_uses_fallback_summary_when_deepseek_call_fails(self):
         client = Mock()
@@ -284,6 +296,33 @@ class SendEmailTests(unittest.TestCase):
         self.assertEqual(sent_message["From"], "sender@example.com")
         self.assertEqual(sent_message["To"], "receiver@example.com")
         self.assertEqual(sent_message["Subject"], "Subject")
+
+    @patch("src.main.smtplib.SMTP")
+    @patch.dict(
+        "src.main.os.environ",
+        {
+            "SMTP_HOST": "smtp.example.com",
+            "SMTP_PORT": "587",
+            "SMTP_USER": "sender@example.com",
+            "SMTP_PASSWORD": "secret",
+            "MAIL_FROM": "sender@example.com",
+            "MAIL_TO": "alice@example.com\nbob@example.com\ncharlie@example.com",
+        },
+        clear=True,
+    )
+    def test_sends_email_to_multiple_newline_separated_recipients_without_exposing_them(
+        self, mock_smtp
+    ):
+        server = mock_smtp.return_value.__enter__.return_value
+
+        main.send_email("Subject", "Body")
+
+        sent_message = server.send_message.call_args.args[0]
+        self.assertEqual(sent_message["To"], "sender@example.com")
+        self.assertEqual(
+            server.send_message.call_args.kwargs["to_addrs"],
+            ["alice@example.com", "bob@example.com", "charlie@example.com"],
+        )
 
 
 if __name__ == "__main__":

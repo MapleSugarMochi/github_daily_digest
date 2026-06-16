@@ -156,24 +156,30 @@ def build_email_body(repos, summaries):
     return "\n".join(lines)
 
 
+def parse_mail_recipients(value):
+    return [recipient.strip() for recipient in value.splitlines() if recipient.strip()]
+
+
 def send_email(subject, body):
     smtp_host = os.environ["SMTP_HOST"]
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.environ["SMTP_USER"]
     smtp_password = os.environ["SMTP_PASSWORD"]
     mail_from = os.environ["MAIL_FROM"]
-    mail_to = os.environ["MAIL_TO"]
+    mail_to = parse_mail_recipients(os.environ["MAIL_TO"])
+    if not mail_to:
+        raise RuntimeError("MAIL_TO must contain at least one recipient.")
 
     message = MIMEMultipart()
     message["From"] = mail_from
-    message["To"] = mail_to
+    message["To"] = mail_to[0] if len(mail_to) == 1 else mail_from
     message["Subject"] = subject
     message.attach(MIMEText(body, "plain", "utf-8"))
 
     with smtplib.SMTP(smtp_host, smtp_port) as server:
         server.starttls()
         server.login(smtp_user, smtp_password)
-        server.send_message(message)
+        server.send_message(message, to_addrs=mail_to)
 
 
 def main():
